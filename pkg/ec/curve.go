@@ -2,11 +2,14 @@
 package ec
 
 import (
+	"crypto/rand"
 	"fmt"
+	"math"
 	"math/big"
 	"time"
 
 	"github.com/kommendorkapten/sigsim/pkg/field"
+	smath "github.com/kommendorkapten/sigsim/pkg/math"
 )
 
 // Point represents a point on a curve.
@@ -41,7 +44,19 @@ type Curve struct {
 	BS int   // Bitsize of the underlying field
 }
 
+func (c *Curve) String() string {
+	return fmt.Sprintf("%d %d %d %+v %d %d",
+		c.F.P(),
+		c.A,
+		c.B,
+		c.G,
+		c.N,
+		c.BS,
+	)
+}
+
 // DemoCurve25 is a simple curve over a field of bitlength 25.
+// Count points takes 43 seconds
 var DemoCurve25 = &Curve{
 	F: field.NewFinite(33489583),
 	A: -3 + 33489583,
@@ -179,14 +194,13 @@ func (c *Curve) Points() []Point {
 				var p = Point{X: x, Y: y}
 				var valid = c.Valid(p)
 
-
 				if valid {
-					// -y is also a valid point, but as
-					// -y is equal to (-y + n) mod n
-					// we don't need to add it as it will
-					// be added during the exhaustive
-					// search
+					// both (x, y) and (x, -y) are valid
 					points[p] = struct{}{}
+					if p.Y > 0 {
+						p.Y = -p.Y + c.F.P()
+						points[p] = struct{}{}
+					}
 				}
 			}
 
@@ -208,6 +222,64 @@ func (c *Curve) Points() []Point {
 	}
 
 	return res
+}
+
+// CountPoints using baby-step giant-step
+// https://en.wikipedia.org/wiki/Counting_points_on_elliptic_curves
+func (c *Curve) CountPoints() int64 {
+	var f = math.Sqrt(float64(c.F.P()))
+	var sq = int64(math.Ceil(f))
+	var nMin = c.F.P() + 1 - 2 * sq
+	var nMax = c.F.P() + 1 + 2 * sq
+
+	var cnt = 0
+	fmt.Printf("(%d, %d)\n", nMin, nMax)
+	for {
+		var p = c.RandomPoint()
+		var mp = c.OrderBG(p)
+		var n []int64
+
+		cnt++
+		fmt.Printf("Testing point %d\n", cnt)
+		for c := nMin; c <= nMax; c++ {
+			if (c % mp) == 0 {
+				n = append(n, c)
+			}
+		}
+
+		if len(n) == 1 {
+			return n[0]
+		}
+	}
+}
+
+// RandomPoint returns a random point on the curve.
+func (c *Curve) RandomPoint() Point {
+	var x *big.Int
+	var p Point
+	var err error
+
+	if (c.F.P() % 4) != 3 {
+		// Can not calculate square root on this prime field.
+		panic(c.F.P())
+	}
+
+	for {
+		x, err = rand.Int(rand.Reader, big.NewInt(c.F.P()))
+		if err != nil {
+			panic(err)
+		}
+		p.X = x.Int64()
+		p.Y, err = c.Y(p.X)
+		if err != nil {
+			continue
+		}
+
+		if c.Valid(p) {
+			return p
+		}
+	}
+
 }
 
 // Y returns the (positive) y coordinate on the curve for a given x
@@ -306,8 +378,28 @@ func (c *Curve) ScalarM(k int64, p Point) Point {
 
 // Valid returns true if the provided point is a valid curve point.
 func (c *Curve) Valid(p Point) bool {
+	if p.Inf {
+		return true
+	}
+
 	var lhs = c.F.Exponentiate(p.Y, 2)
 	var rhs = c.F.Exponentiate(p.X, 3)
+	rhs = c.F.Add(rhs, c.F.Multiply(c.A, p.X))
+	rhs = c.F.Add(rhs, c.B)
+	var valid = lhs == rhs
+
+	return valid
+}
+
+func (c *Curve) Valid2(p Point) bool {
+	if p.Inf {
+		return true
+	}
+
+	//var lhs = c.F.Exponentiate(p.Y, 2)
+	//var rhs = c.F.Exponentiate(p.X, 3)
+	var lhs int64
+	var rhs int64
 	rhs = c.F.Add(rhs, c.F.Multiply(c.A, p.X))
 	rhs = c.F.Add(rhs, c.B)
 	var valid = lhs == rhs
@@ -320,6 +412,7 @@ func (c *Curve) Valid(p Point) bool {
 // reached by multiplying p with a scalar.
 func (c *Curve) Order(p Point) int64 {
 	var order int64
+	var cnt int64
 	var cp Point
 	var pp = p
 
@@ -328,9 +421,6 @@ func (c *Curve) Order(p Point) int64 {
 		order++
 
 		cp = c.Add(pp, p)
-		if !c.Valid(cp) {
-			panic(cp)
-		}
 		if cp == p {
 			// We reached our starting point
 			return order
@@ -356,10 +446,88 @@ func (c *Curve) Order(p Point) int64 {
 			start = time.Now()
 		}
 	}
+
+	fmt.Println(cnt)
+	return 0
 }
 
-// Count the number of points
-// is all points on a curve equal? i.e do they have the same order?
-func (c *Curve) ScoofsOrder() int64 {
-	return 0
+// OrderBG computes the order of a point on the curve using
+// Baby-step giant-step
+func (c *Curve) OrderBG(p Point) int64 {
+	// p^-4
+	var f = math.Sqrt(math.Sqrt(float64(c.F.P())))
+	var m = int64(math.Ceil(f + 0.5)) + 1
+	var pj = make([]Point, m)
+	var q = c.ScalarM(c.F.P() + 1, p)
+	var mp int64 = -1
+	var j int64
+
+	fmt.Printf("m: %d\n", m)
+
+	// Precompute pj = j * p for j in [0, m]
+	for j = 0; j < m; j++ {
+		pj[j] = c.ScalarM(j, p)
+	}
+
+	// Found a point pj that satisfies
+	// (q + k*2*m*p).X = pj.X
+	var cnt = 0
+	var start = time.Now()
+
+	// This can be parallel!
+	for k := int64(0); k < c.F.P(); k++ {
+		var cand Point
+		var found = false
+
+		cand = c.Add(q, c.ScalarM(k * 2 * m, p))
+
+		for j = 0; j < m; j++ {
+			if cand.X == pj[j].X {
+				mp = c.F.P() + 1 + (k * 2 * m)
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+		cnt++
+		if (cnt % 10000) == 0 {
+			fmt.Printf("Tried %d points in %s\n",
+				cnt,
+				time.Since(start),
+			)
+			start = time.Now()
+		}
+	}
+
+	// (mp +/- j)*p is now the identity element
+	var id Point
+	id = c.ScalarM(mp + j, p)
+	if id.Inf {
+		mp += j
+	} else {
+		mp -= j
+	}
+
+	// mp may be a composite, find the minimal value satisfying
+	// mp * p = identity element
+	var pfs = smath.PrimeFactors(mp)
+	for i := 0; i < len(pfs); {
+		var s = mp / pfs[i]
+
+		// Residual is smaller than current prime factor
+		if s == 0 {
+			break
+		}
+
+		id = c.ScalarM(s, p)
+		if id.Inf {
+			mp = s
+		} else {
+			i++
+		}
+	}
+	// mp is now the order of point p
+	return mp
 }

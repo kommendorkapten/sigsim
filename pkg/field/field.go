@@ -183,7 +183,7 @@ func (f Finite) Sqrt(i int64) (int64, error) {
 	var j = f.Multiply(x, x)
 
 	if i == j {
-		return x, nil
+		return f.Canonicalize(x), nil
 	}
 
 	return 0, fmt.Errorf("%d is not a square mod %d", i, f.p)

@@ -320,6 +320,34 @@ func TestScalarM(t *testing.T) {
 			assert.Equal(t, tc.r, r, "Add point failed")
 		}
 	})
+
+	t.Run("test commutative", func(t *testing.T) {
+		var c *Curve
+		var err error
+
+		c, err = NewCurve(field.NewFinite(2767),
+			-3 + 2767,
+			4)
+		assert.Nil(t, err)
+
+		var g = c.RandomPoint()
+		var d1, d2 int64
+
+		// Generate two random d values (take the x coordinate from
+		// two points
+		d1 = c.RandomPoint().X
+		for {
+			d2 = c.RandomPoint().X
+
+			if d1 != d2 {
+				break
+			}
+		}
+		var g1 = c.ScalarM(d1, c.ScalarM(d2, g))
+		var g2 = c.ScalarM(d2, c.ScalarM(d1, g))
+
+		assert.Equal(t, g1, g2)
+	})
 }
 
 func TestPointsOnCurve(t *testing.T) {
@@ -364,6 +392,14 @@ func TestPointsOnCurve(t *testing.T) {
 	}
 	got = c.Points()
 	assert.Equal(t, 102, len(got), "wrong number of points")
+
+	c = Curve{
+		F: field.NewFinite(71),
+		A: -1,
+		B: 0,
+	}
+	got = c.Points()
+	assert.Equal(t, 72, len(got), "wrong number of points")
 }
 
 func TestOrder(t *testing.T) {
@@ -377,19 +413,23 @@ func TestOrder(t *testing.T) {
 		}
 		// Test cardinality first
 		var points = c.Points()
-		assert.Equal(t, 136, len(points), "wrong number of points")
+		assert.Equal(t, 270, len(points), "wrong number of points")
 
 		// Pick a "good" point (i.e generator)
 		var g = Point{X: 200, Y: 39}
-		var order = c.Order(g)
 		assert.True(t, c.Valid(g))
+		var order = c.Order(g)
+		var orderBG = c.OrderBG(g)
 		assert.Equal(t, int64(270), order, "wrong order")
+		assert.Equal(t, order, orderBG, "wrong order")
 
 		// Now use a "bad" genertor (order 9)
 		g = Point{X: 60, Y: 48}
 		order = c.Order(g)
+		orderBG = c.OrderBG(g)
 		assert.True(t, c.Valid(g))
 		assert.Equal(t, int64(9), order, "wrong order")
+		assert.Equal(t, order, orderBG, "wrong order")
 
 		// Enumerate all points and verify we get back to where
 		// we start
@@ -421,7 +461,43 @@ func TestOrder(t *testing.T) {
 		}
 	})
 
-	// This test takes about 90s on a M1 CPU.
+	t.Run("curve_15_0_7", func(t *testing.T) {
+		t.Parallel()
+
+		var c = Curve{
+			F: field.NewFinite(17),
+			A: 0,
+			B: 7,
+		}
+		// Test cardinality first
+		var points = c.Points()
+		assert.Equal(t, 18, len(points), "wrong number of points")
+
+		var tests = []struct{
+			g Point
+			r int64
+		}{
+			{
+				g: Point{X: 15, Y: 13},
+				r: 18,
+			},
+			{
+				g: Point{X: 3, Y: 0},
+				r: 2,
+			},
+			{
+				g: Point{X: 5, Y: 9},
+				r: 3,
+			},
+		}
+		for _, tc := range tests {
+			assert.True(t, c.Valid(tc.g))
+			assert.Equal(t, tc.r, c.Order(tc.g))
+			assert.Equal(t, tc.r, c.OrderBG(tc.g))
+		}
+	})
+
+	// This test takes about 130s on a M1 CPU.
 	// t.Run("curve_33489583_-3_3411011", func(t *testing.T) {
 	// 	t.Parallel()
 	// 	var c = Curve{
@@ -435,6 +511,8 @@ func TestOrder(t *testing.T) {
 	// 	var order = c.Order(g)
 	// 	var want int64 = 33480829
 	// 	assert.Equal(t, want, order, "wrong order")
+	// 	var orderBG = c.OrderBG(g)
+	// 	assert.Equal(t, want, orderBG, "wrong order (bg)")
 	// })
 }
 
