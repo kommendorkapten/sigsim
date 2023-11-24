@@ -78,8 +78,32 @@ func (f Finite) canonicalize(z *big.Int) int64 {
 func (f Finite) Add(i, j int64) int64 {
 	var z1 = big.NewInt(i)
 	var z2 = big.NewInt(j)
+	var r big.Int
 
-	return f.canonicalize(z1.Add(z1, z2))
+	r.Add(z1, z2)
+
+	if r.Cmp(zero) < 0 {
+		r.Add(&r, f.zp)
+	} else if r.Cmp(f.zp) > 0 {
+		r.Sub(&r, f.zp)
+	}
+
+	return r.Int64()
+}
+
+func (f Finite) AddS(z *big.Int, i, j int64) int64 {
+	var z1 = big.NewInt(i)
+	var z2 = big.NewInt(j)
+
+	z.Add(z1, z2)
+
+	if z.Cmp(zero) < 0 {
+		z.Add(z, f.zp)
+	} else if z.Cmp(f.zp) > 0 {
+		z.Sub(z, f.zp)
+	}
+
+	return z.Int64()
 }
 
 // Multiply two elements and return the result.
@@ -88,6 +112,13 @@ func (f Finite) Multiply(i, j int64) int64 {
 	var z2 = big.NewInt(j)
 
 	return f.canonicalize(z1.Mul(z1, z2))
+}
+
+func (f Finite) MultiplyS(z *big.Int, i, j int64) int64 {
+	var z1 = big.NewInt(i)
+	var z2 = big.NewInt(j)
+
+	return f.canonicalize(z.Mul(z1, z2))
 }
 
 // Inverse computes the multiplicative inverse of i mod n
@@ -100,23 +131,21 @@ func (f Finite) Inverse(i int64) (int64, error) {
 	var r = big.NewInt(f.p)
 	var newT = big.NewInt(1)
 	var newR = big.NewInt(i % f.p)
+	var q big.Int
+	var tmp big.Int
 
 	for newR.BitLen() != 0 {
-		var q big.Int
-		var tmpT big.Int
-		var tmpR big.Int
-
 		q.Div(r, newR)
 
-		tmpT.Mul(&q, newT)
-		tmpT.Sub(t, &tmpT)
-		t = newT
-		newT = &tmpT
+		tmp.Mul(&q, newT)
+		tmp.Sub(t, &tmp)
+		t.Set(newT)
+		newT.Set(&tmp)
 
-		tmpR.Mul(&q, newR)
-		tmpR.Sub(r, &tmpR)
-		r = newR
-		newR = &tmpR
+		tmp.Mul(&q, newR)
+		tmp.Sub(r, &tmp)
+		r.Set(newR)
+		newR.Set(&tmp)
 	}
 
 	if r.Cmp(one) > 0 {

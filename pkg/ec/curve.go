@@ -311,6 +311,7 @@ func (c *Curve) Y(x int64) (int64, error) {
 func (c *Curve) Add(p, q Point) Point {
 	var r Point
 	var m int64
+	var z big.Int
 
 	if p.Inf {
 		return q
@@ -324,9 +325,9 @@ func (c *Curve) Add(p, q Point) Point {
 		var inv int64
 		var err error
 
-		m = c.F.Multiply(3, c.F.Multiply(p.X, p.X))
-		m = c.F.Add(m, c.A)
-		inv = c.F.Multiply(2, p.Y)
+		m = c.F.MultiplyS(&z, 3, c.F.MultiplyS(&z, p.X, p.X))
+		m = c.F.AddS(&z, m, c.A)
+		inv = c.F.MultiplyS(&z, 2, p.Y)
 
 		inv, err = c.F.Inverse(inv)
 		if err != nil {
@@ -334,29 +335,29 @@ func (c *Curve) Add(p, q Point) Point {
 			return Point{Inf: true}
 		}
 
-		m = c.F.Multiply(m, inv)
+		m = c.F.MultiplyS(&z, m, inv)
 	} else {
 		var inv int64
 		var err error
 
-		m = c.F.Add(q.Y, -p.Y)
-		inv = c.F.Add(q.X, -p.X)
+		m = c.F.AddS(&z, q.Y, -p.Y)
+		inv = c.F.AddS(&z, q.X, -p.X)
 		inv, err = c.F.Inverse(inv)
 		if err != nil {
 			// infinite slope
 			return Point{Inf: true}
 		}
 
-		m = c.F.Multiply(m, inv)
+		m = c.F.MultiplyS(&z, m, inv)
 	}
 
-	r.X = c.F.Multiply(m, m)
-	r.X = c.F.Add(r.X, -p.X)
-	r.X = c.F.Add(r.X, -q.X)
+	r.X = c.F.MultiplyS(&z, m, m)
+	r.X = c.F.AddS(&z, r.X, -p.X)
+	r.X = c.F.AddS(&z, r.X, -q.X)
 
-	r.Y = c.F.Add(p.X, -r.X)
-	r.Y = c.F.Multiply(r.Y, m)
-	r.Y = c.F.Add(r.Y, -p.Y)
+	r.Y = c.F.AddS(&z, p.X, -r.X)
+	r.Y = c.F.MultiplyS(&z, r.Y, m)
+	r.Y = c.F.AddS(&z, r.Y, -p.Y)
 
 	return r
 }
@@ -569,7 +570,7 @@ func (c *Curve) approxOrder(job *job) {
 		}
 
 		cnt++
-		if (cnt % 10000) == 0 {
+		if (cnt % 40000) == 0 {
 			if job.ctx.Err() != nil {
 				// Context is cancelled
 				return
