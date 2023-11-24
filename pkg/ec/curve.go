@@ -2,6 +2,7 @@
 package ec
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"math"
@@ -11,6 +12,8 @@ import (
 	"github.com/kommendorkapten/sigsim/pkg/field"
 	smath "github.com/kommendorkapten/sigsim/pkg/math"
 )
+
+var Parallel int64 = 2
 
 // Point represents a point on a curve.
 // If the point is the identity element, Inf is set to true.
@@ -451,6 +454,19 @@ func (c *Curve) Order(p Point) int64 {
 	return 0
 }
 
+type job struct{
+	start, stop int64
+	ctx context.Context
+	c chan jobRes
+	pj []Point
+	q Point
+	p Point
+}
+
+type jobRes struct {
+	mp, j int64
+}
+
 // OrderBG computes the order of a point on the curve using
 // Baby-step giant-step
 func (c *Curve) OrderBG(p Point) int64 {
@@ -460,54 +476,49 @@ func (c *Curve) OrderBG(p Point) int64 {
 	var pj = make([]Point, m)
 	var q = c.ScalarM(c.F.P() + 1, p)
 	var mp int64 = -1
-	var j int64
-
-	fmt.Printf("m: %d\n", m)
 
 	// Precompute pj = j * p for j in [0, m]
-	for j = 0; j < m; j++ {
+	for j := int64(0); j < m; j++ {
 		pj[j] = c.ScalarM(j, p)
 	}
 
 	// Found a point pj that satisfies
 	// (q + k*2*m*p).X = pj.X
-	var cnt = 0
-	var start = time.Now()
+	var chunk = c.F.P() / Parallel
+	var res = make(chan jobRes, 1)
 
-	// This can be parallel!
-	for k := int64(0); k < c.F.P(); k++ {
-		var cand Point
-		var found = false
+	ctx, stop := context.WithCancel(context.Background())
 
-		cand = c.Add(q, c.ScalarM(k * 2 * m, p))
+	for i := int64(0); i < Parallel; i++ {
+		var job = job{
+			start: i * chunk,
+			stop: (i + 1) * chunk,
+			ctx: ctx,
+			c: res,
+			pj: pj,
+			q: q,
+			p: p,
+		}
 
-		for j = 0; j < m; j++ {
-			if cand.X == pj[j].X {
-				mp = c.F.P() + 1 + (k * 2 * m)
-				found = true
-				break
-			}
+		// Let the last one do a bit of extra work
+		if i == (Parallel - 1) {
+			job.stop = c.F.P()
 		}
-		if found {
-			break
-		}
-		cnt++
-		if (cnt % 10000) == 0 {
-			fmt.Printf("Tried %d points in %s\n",
-				cnt,
-				time.Since(start),
-			)
-			start = time.Now()
-		}
+		fmt.Println("Dispatching job")
+		go c.approxOrder(&job)
 	}
+
+	var jr = <- res
+	// Got a value, stop all goroutines
+	stop()
 
 	// (mp +/- j)*p is now the identity element
 	var id Point
-	id = c.ScalarM(mp + j, p)
+	id = c.ScalarM(jr.mp + jr.j, p)
 	if id.Inf {
-		mp += j
+		mp = jr.mp + jr.j
 	} else {
-		mp -= j
+		mp = jr.mp - jr.j
 	}
 
 	// mp may be a composite, find the minimal value satisfying
@@ -530,4 +541,46 @@ func (c *Curve) OrderBG(p Point) int64 {
 	}
 	// mp is now the order of point p
 	return mp
+}
+
+func (c *Curve) approxOrder(job *job) {
+	var cnt = 0
+	var m = int64(len(job.pj))
+
+	var start = time.Now()
+	fmt.Printf("start job %d -> %d\n", job.start, job.stop)
+	for k := job.start; k < job.stop; k++ {
+		var cand Point
+
+		cand = c.Add(job.q, c.ScalarM(k * 2 * m, job.p))
+
+		for j := int64(0); j < m; j++ {
+			if cand.X == job.pj[j].X {
+				var mp = c.F.P() + 1 + (k * 2 * m)
+
+				fmt.Printf("done(%d): found %d %d\n", k, mp, j)
+				// We found a valid point
+				job.c <- jobRes{
+					mp: mp,
+					j: j,
+				}
+				return
+			}
+		}
+
+		cnt++
+		if (cnt % 10000) == 0 {
+			if job.ctx.Err() != nil {
+				// Context is cancelled
+				return
+			}
+
+			fmt.Printf("Tried %d points in %s\n",
+				cnt,
+				time.Since(start),
+			)
+			start = time.Now()
+		}
+	}
+	fmt.Printf("WTF, finished job\n")
 }
