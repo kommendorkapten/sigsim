@@ -235,15 +235,11 @@ func (c *Curve) CountPoints() int64 {
 	var nMin = c.F.P() + 1 - 2 * sq
 	var nMax = c.F.P() + 1 + 2 * sq
 
-	var cnt = 0
-	fmt.Printf("(%d, %d)\n", nMin, nMax)
 	for {
 		var p = c.RandomPoint()
 		var mp = c.OrderBG(p)
 		var n []int64
 
-		cnt++
-		fmt.Printf("Testing point %d\n", cnt)
 		for c := nMin; c <= nMax; c++ {
 			if (c % mp) == 0 {
 				n = append(n, c)
@@ -326,7 +322,7 @@ func (c *Curve) Add(p, q Point) Point {
 		var err error
 
 		m = c.F.MultiplyS(&z, 3, c.F.MultiplyS(&z, p.X, p.X))
-		m = c.F.AddS(&z, m, c.A)
+		m = c.F.Add(m, c.A)
 		inv = c.F.MultiplyS(&z, 2, p.Y)
 
 		inv, err = c.F.Inverse(inv)
@@ -340,8 +336,8 @@ func (c *Curve) Add(p, q Point) Point {
 		var inv int64
 		var err error
 
-		m = c.F.AddS(&z, q.Y, -p.Y)
-		inv = c.F.AddS(&z, q.X, -p.X)
+		m = c.F.Add(q.Y, -p.Y)
+		inv = c.F.Add(q.X, -p.X)
 		inv, err = c.F.Inverse(inv)
 		if err != nil {
 			// infinite slope
@@ -352,12 +348,12 @@ func (c *Curve) Add(p, q Point) Point {
 	}
 
 	r.X = c.F.MultiplyS(&z, m, m)
-	r.X = c.F.AddS(&z, r.X, -p.X)
-	r.X = c.F.AddS(&z, r.X, -q.X)
+	r.X = c.F.Add(r.X, -p.X)
+	r.X = c.F.Add(r.X, -q.X)
 
-	r.Y = c.F.AddS(&z, p.X, -r.X)
+	r.Y = c.F.Add(p.X, -r.X)
 	r.Y = c.F.MultiplyS(&z, r.Y, m)
-	r.Y = c.F.AddS(&z, r.Y, -p.Y)
+	r.Y = c.F.Add(r.Y, -p.Y)
 
 	return r
 }
@@ -395,28 +391,11 @@ func (c *Curve) Valid(p Point) bool {
 	return valid
 }
 
-func (c *Curve) Valid2(p Point) bool {
-	if p.Inf {
-		return true
-	}
-
-	//var lhs = c.F.Exponentiate(p.Y, 2)
-	//var rhs = c.F.Exponentiate(p.X, 3)
-	var lhs int64
-	var rhs int64
-	rhs = c.F.Add(rhs, c.F.Multiply(c.A, p.X))
-	rhs = c.F.Add(rhs, c.B)
-	var valid = lhs == rhs
-
-	return valid
-}
-
 // Order calculates the order for the provided point.
 // The order is the cardinality of the set of points that which can be
 // reached by multiplying p with a scalar.
 func (c *Curve) Order(p Point) int64 {
 	var order int64
-	var cnt int64
 	var cp Point
 	var pp = p
 
@@ -437,9 +416,6 @@ func (c *Curve) Order(p Point) int64 {
 		z.Lsh(z, 2)
 		var o = big.NewInt(order)
 		if o.Cmp(z) > 0 {
-			fmt.Println(o.Cmp(z))
-			fmt.Println(c.F.P())
-			fmt.Println(order)
 			panic(order)
 		}
 
@@ -451,7 +427,6 @@ func (c *Curve) Order(p Point) int64 {
 		}
 	}
 
-	fmt.Println(cnt)
 	return 0
 }
 
@@ -505,7 +480,6 @@ func (c *Curve) OrderBG(p Point) int64 {
 		if i == (Parallel - 1) {
 			job.stop = c.F.P()
 		}
-		fmt.Println("Dispatching job")
 		go c.approxOrder(&job)
 	}
 
@@ -570,7 +544,7 @@ func (c *Curve) approxOrder(job *job) {
 		}
 
 		cnt++
-		if (cnt % 40000) == 0 {
+		if (cnt % 100000) == 0 {
 			if job.ctx.Err() != nil {
 				// Context is cancelled
 				return
