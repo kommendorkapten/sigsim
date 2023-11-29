@@ -96,6 +96,7 @@ func rawSign(pk *PrivateKey, k int64, h []byte) (int64, int64, error) {
 	var err error
 
 	z = truncate(h, pk.Pub.C.BS)
+	sf.Canonicalize(z)
 	p = pk.Pub.C.ScalarM(k, pk.Pub.C.G)
 
 	if r = sf.Canonicalize(p.X); r == 0 {
@@ -148,6 +149,7 @@ func Verify(pub *PublicKey, r, s int64, h []byte) bool {
 	}
 
 	z = truncate(h, pub.C.BS)
+	sf.Canonicalize(z)
 
 	inv, err = sf.Inverse(s)
 	if err != nil {
@@ -174,6 +176,9 @@ func solve(c *ec.Curve, r, s1, s2 int64, h1, h2 []byte) (int64, error) {
 	var z1 = truncate(h1, c.BS)
 	var z2 = truncate(h2, c.BS)
 	var sf = field.NewFinite(c.N)
+
+	z1 = sf.Canonicalize(z1)
+	z2 = sf.Canonicalize(z2)
 
 	var inv, err = sf.Inverse(sf.Add(s2, -s1))
 	if err != nil {

@@ -1,0 +1,88 @@
+run:
+  timeout: 10m
+  go: '1.20'
+linters:
+  enable:
+    - revive
+    - errcheck
+    - gofmt
+    - goconst
+    - whitespace
+    - gosec
+    - gocritic
+    - misspell
+    - errcheck
+    - errorlint
+    - unused
+    - typecheck
+    - staticcheck
+    - wrapcheck
+  presets:
+    - bugs
+    - comment
+    - complexity
+    - error
+    - format
+    - import
+    - metalinter
+    - module
+    - performance
+    - sql
+    - style
+    - test
+    - unused
+  disable:
+    - gofumpt
+    - varnamelen
+    - forbidigo
+    - funlen
+    - testpackage
+    - gochecknoglobals
+    - exhaustruct
+    - depguard
+    - gomnd
+    - paralleltest
+    - goerr113
+    - cyclop
+    - gci
+    - nolintlint
+
+linters-settings:
+  revive:
+    enable-all-rules: true
+    rules:
+      - name: add-constant
+        disabled: true
+      - name: argument-limit
+        severity: warning
+        disabled: false
+        arguments: [ 6 ]
+      - name: confusing-naming
+        disabled: true
+      - name: confusing-results
+        disabled: true
+      - name: cyclomatic
+        disabled: true
+        arguments: [ 7 ]
+      - name: file-header
+        disabled: true
+      - name: line-length-limit
+        severity: warning
+        disabled: false
+        arguments: [ 80 ]
+      - name: function-length
+        disabled: true
+      - name: cognitive-complexity
+        disabled: true
+      - name: max-public-structs
+        disabled: true
+      - name: banned-characters
+        disabled: true
+      - name: function-result-limit
+        severity: warning
+        disabled: false
+        arguments: [ 3 ]
+  wsl:
+    allow-cuddle-declarations: true
+    force-short-decl-cuddling: true
+    force-err-cuddling: true

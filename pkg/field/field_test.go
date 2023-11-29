@@ -22,7 +22,18 @@ func TestAdd(t *testing.T) {
 		{-40, 38, 95},
 		{-40, -38, 19},
 	}
+	for _, tc := range tests {
+		var r = f.Add(tc.i, tc.j)
+		assert.Equal(t, tc.r, r, "Add failed")
+	}
 
+	f = NewFinite(233)
+	tests = []struct {
+		i, j, r int64
+	}{
+		{40, -12, 28},
+		{22, -12, 10},
+	}
 	for _, tc := range tests {
 		var r = f.Add(tc.i, tc.j)
 		assert.Equal(t, tc.r, r, "Add failed")
@@ -45,7 +56,7 @@ func TestMultiply(t *testing.T) {
 
 	for _, tc := range tests {
 		var r = f.Multiply(tc.i, tc.j)
-		assert.Equal(t, tc.r, r, "Multiply failed")
+		assert.Equal(t, tc.r, r, "Multiply failed %d * %d", tc.i, tc.j)
 	}
 
 	f = NewFinite(996488947583)
@@ -59,7 +70,18 @@ func TestMultiply(t *testing.T) {
 
 	for _, tc := range tests {
 		var r = f.Multiply(tc.i, tc.j)
-		assert.Equal(t, tc.r, r, "Multiply failed")
+		assert.Equal(t, tc.r, r, "Multiply failed %d * %d", tc.i, tc.j)
+	}
+
+	f = NewFinite(31672089530443)
+	tests = []struct {
+		i, j, r int64
+	}{
+		{31672089530441, 31672089530241, 404},
+	}
+	for _, tc := range tests {
+		var r = f.Multiply(tc.i, tc.j)
+		assert.Equal(t, tc.r, r, "Multiply failed %d * %d", tc.i, tc.j)
 	}
 }
 

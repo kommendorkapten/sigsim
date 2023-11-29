@@ -6,6 +6,7 @@ package field
 import (
 	"fmt"
 	"math/big"
+	"math/bits"
 )
 
 // BitLength is the max bitsize for the integer used to define the
@@ -54,10 +55,12 @@ func (f Finite) Element(i int64) bool {
 // Canonicalize returns the canonical representation of an element.
 // The canonical representation is always positive and mod P.
 func (f Finite) Canonicalize(i int64) int64 {
-	i %= f.p
-
-	if i < 0 {
-		i += f.p
+	if i >= f.p {
+		i %= f.p
+	} else {
+		for i < 0 {
+			i += f.p
+		}
 	}
 
 	return i
@@ -76,57 +79,40 @@ func (f Finite) canonicalize(z *big.Int) int64 {
 
 // Add to elements and return the canonicalize result.
 func (f Finite) Add(i, j int64) int64 {
-	var z1 = big.NewInt(i)
-	var z2 = big.NewInt(j)
-	var r big.Int
-
-	r.Add(z1, z2)
-
-	if r.Cmp(zero) < 0 {
-		r.Add(&r, f.zp)
-	} else if r.Cmp(f.zp) > 0 {
-		r.Sub(&r, f.zp)
+	if i < 0 {
+		i += f.p
+	}
+	if j < 0 {
+		j += f.p
 	}
 
-	return r.Int64()
-}
+	sum, carry := bits.Add64(uint64(i), uint64(j), 0)
+	_, r := bits.Div64(carry, sum, uint64(f.p))
 
-func (f Finite) AddS(z *big.Int, i, j int64) int64 {
-	var z1 = big.NewInt(i)
-	var z2 = big.NewInt(j)
-
-	z.Add(z1, z2)
-
-	if z.Cmp(zero) < 0 {
-		z.Add(z, f.zp)
-	} else if z.Cmp(f.zp) > 0 {
-		z.Sub(z, f.zp)
-	}
-
-	return z.Int64()
+	return int64(r)
 }
 
 // Multiply two elements and return the result.
 func (f Finite) Multiply(i, j int64) int64 {
-	var z1 = big.NewInt(i)
-	var z2 = big.NewInt(j)
+	if i < 0 {
+		i += f.p
+	}
+	if j < 0 {
+		j += f.p
+	}
 
-	return f.canonicalize(z1.Mul(z1, z2))
+	hi, lo := bits.Mul64(uint64(i), uint64(j))
+	_, r := bits.Div64(hi, lo, uint64(f.p))
+
+	return int64(r)
 }
 
-func (f Finite) MultiplyS(z *big.Int, i, j int64) int64 {
-	var z1 = big.NewInt(i)
-	var z2 = big.NewInt(j)
-
-	return f.canonicalize(z.Mul(z1, z2))
-}
-
-// Inverse computes the multiplicative inverse of i mod n
+// InverseBig computes the multiplicative inverse of i mod n
 // nolint: lll
 // nolint: revive
 // See https://en.wikipedia.org/wiki/Extended_Euclidean_algorithm#Computing_multiplicative_inverses_in_modular_structures
 // for reference.
-func (f Finite) Inverse(i int64) (int64, error) {
+func (f Finite) InverseBig(i int64) (int64, error) {
 	var t = big.NewInt(0)
 	var r = big.NewInt(f.p)
 	var newT = big.NewInt(1)
@@ -154,6 +140,30 @@ func (f Finite) Inverse(i int64) (int64, error) {
 
 	return f.canonicalize(t), nil
 }
+
+// Inverse computes the multiplicative inverse of i mod n
+// withouth performing the computations as big integers.
+func (f Finite) Inverse(i int64) (int64, error) {
+	var t int64
+	var r = f.p
+	var newT = int64(1)
+	var newR = i % f.p
+	var q int64
+
+	for newR != 0 {
+		q = r / newR
+
+		t, newT = newT, t - q * newT
+		r, newR = newR, r - q * newR
+	}
+
+	if r > 1 {
+		return 0, fmt.Errorf("%d is not invertible", i)
+	}
+
+	return f.Canonicalize(t), nil
+}
+
 
 // Exponentiate raises i to the power of j mod n.
 func (f Finite) Exponentiate(i, j int64) int64 {

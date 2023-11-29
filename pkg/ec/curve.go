@@ -307,7 +307,6 @@ func (c *Curve) Y(x int64) (int64, error) {
 func (c *Curve) Add(p, q Point) Point {
 	var r Point
 	var m int64
-	var z big.Int
 
 	if p.Inf {
 		return q
@@ -321,9 +320,9 @@ func (c *Curve) Add(p, q Point) Point {
 		var inv int64
 		var err error
 
-		m = c.F.MultiplyS(&z, 3, c.F.MultiplyS(&z, p.X, p.X))
+		m = c.F.Multiply(3, c.F.Multiply(p.X, p.X))
 		m = c.F.Add(m, c.A)
-		inv = c.F.MultiplyS(&z, 2, p.Y)
+		inv = c.F.Multiply(2, p.Y)
 
 		inv, err = c.F.Inverse(inv)
 		if err != nil {
@@ -331,7 +330,7 @@ func (c *Curve) Add(p, q Point) Point {
 			return Point{Inf: true}
 		}
 
-		m = c.F.MultiplyS(&z, m, inv)
+		m = c.F.Multiply(m, inv)
 	} else {
 		var inv int64
 		var err error
@@ -344,15 +343,15 @@ func (c *Curve) Add(p, q Point) Point {
 			return Point{Inf: true}
 		}
 
-		m = c.F.MultiplyS(&z, m, inv)
+		m = c.F.Multiply(m, inv)
 	}
 
-	r.X = c.F.MultiplyS(&z, m, m)
+	r.X = c.F.Multiply(m, m)
 	r.X = c.F.Add(r.X, -p.X)
 	r.X = c.F.Add(r.X, -q.X)
 
 	r.Y = c.F.Add(p.X, -r.X)
-	r.Y = c.F.MultiplyS(&z, r.Y, m)
+	r.Y = c.F.Multiply(r.Y, m)
 	r.Y = c.F.Add(r.Y, -p.Y)
 
 	return r
@@ -446,7 +445,8 @@ type jobRes struct {
 // OrderBG computes the order of a point on the curve using
 // Baby-step giant-step
 func (c *Curve) OrderBG(p Point) int64 {
-	// p^-4
+	// TODO: verify m against the size of the limit imposed by
+	// Hasse's theoereom (seems to be 1/4 of the expected size).
 	var f = math.Sqrt(math.Sqrt(float64(c.F.P())))
 	var m = int64(math.Ceil(f + 0.5)) + 1
 	var pj = make([]Point, m)
@@ -489,6 +489,7 @@ func (c *Curve) OrderBG(p Point) int64 {
 
 	// (mp +/- j)*p is now the identity element
 	var id Point
+
 	id = c.ScalarM(jr.mp + jr.j, p)
 	if id.Inf {
 		mp = jr.mp + jr.j
@@ -516,6 +517,37 @@ func (c *Curve) OrderBG(p Point) int64 {
 	}
 	// mp is now the order of point p
 	return mp
+}
+
+// This does not work yet...
+func (c *Curve) approxOrder2(job *job) {
+	var m = int64(len(job.pj))
+	var q = c.ScalarM(2*m+1, job.p)
+	var r = job.q
+
+	for i := int64(0); i < m; i++ {
+		var cand = c.Add(r, c.ScalarM(i, q))
+
+		for j := int64(0); j < m; j++ {
+			if cand.X < 0 {
+				fmt.Println("cand")
+			}
+			if job.pj[j].X < 0 {
+				fmt.Println("job")
+			}
+			if cand.X == job.pj[j].X {
+				var mp = c.F.P() + 1 + (2 * m) * i - j
+
+				fmt.Printf("done(%d): found %d %d\n", i, mp, j)
+				// We found a valid point
+				job.c <- jobRes{
+					mp: mp,
+					j: j,
+				}
+				return
+			}
+		}
+	}
 }
 
 func (c *Curve) approxOrder(job *job) {
@@ -550,12 +582,12 @@ func (c *Curve) approxOrder(job *job) {
 				return
 			}
 
-			fmt.Printf("Tried %d points in %s\n",
+			fmt.Printf("Tried %d points in %s %f\n",
 				cnt,
 				time.Since(start),
+				float32(job.stop - job.start) / float32(cnt),
 			)
 			start = time.Now()
 		}
 	}
-	fmt.Printf("WTF, finished job\n")
 }

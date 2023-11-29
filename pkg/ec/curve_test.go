@@ -497,27 +497,27 @@ func TestOrder(t *testing.T) {
 		}
 	})
 
-	// This test takes about 130s on a M1 CPU.
-	// t.Run("curve_33489583_-3_3411011", func(t *testing.T) {
-	// 	t.Parallel()
-	// 	var c = Curve{
-	// 		F: field.NewFinite(33489583),
-	// 		A: -3,
-	// 		B: 3411011,
-	// 	}
+	// This test is slow
+	t.Run("curve_33489583_-3_3411011", func(t *testing.T) {
+		t.Parallel()
+		var c = Curve{
+			F: field.NewFinite(33489583),
+			A: -3,
+			B: 3411011,
+		}
 
-	// 	// Pick a "good" point (i.e generator).
-	// 	var g = Point{X: 12272011, Y: 8490180}
-	// 	var order = c.Order(g)
-	// 	var want int64 = 33480829
-	// 	assert.Equal(t, want, order, "wrong order")
-	// 	var orderBG = c.OrderBG(g)
-	// 	assert.Equal(t, want, orderBG, "wrong order (bg)")
-	// })
+		// Pick a "good" point (i.e generator).
+		var g = Point{X: 12272011, Y: 8490180}
+		var order = c.Order(g)
+		var want int64 = 33480829
+		assert.Equal(t, want, order, "wrong order")
+		var orderBG = c.OrderBG(g)
+		assert.Equal(t, want, orderBG, "wrong order (bg)")
+	})
 }
 
-// This test takes aound 90s on a M1 CPU.
-// func TestVerify(t *testing.T) {
-// 	t.Parallel()
-// 	assert.Nil(t, DemoCurve25.Verify())
-// }
+// This test is slow
+func TestVerify(t *testing.T) {
+	t.Parallel()
+	assert.Nil(t, DemoCurve25.Verify())
+}
